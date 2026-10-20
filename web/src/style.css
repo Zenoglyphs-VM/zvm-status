@@ -1,0 +1,687 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* Copied from zvm-explorer/src/style.css so the status page and the explorer
+   read as one site. Keep the token block in step with it. */
+
+/* The Zenon design system, transcribed rather than imported (the way
+   projects/amm does it): token values only, no component library, nothing
+   fetched at runtime — which is what lets this build sit on GitHub Pages and
+   still talk to a node on localhost.
+
+   Two rules carry over unchanged from the system:
+
+   1. The data is the hero. Every identifier and number is mono with tabular
+      figures, so columns align and values do not jitter as they update.
+   2. Color is structural, never decorative. Here that is sharpened into one
+      rule the rest of the app can be read by:
+
+          blue  = NoM, layer one, what was ordered
+          green = ZVM, layer two, what was executed
+          pink  = arrived within the last few seconds
+
+      A reader who learns those three on the front page can read every other
+      page without a legend. */
+
+:root {
+  /* Near-black, very slightly cyan, so the green sits on a surface related to
+     it rather than on neutral grey. */
+  --bg: #06090a;
+  --surface: #0b1113;
+  --raised: #121a1d;
+  --sunk: #04080a;
+  --line: #1a262a;
+  --line-strong: #2b3a40;
+
+  --fg: #e6efec;
+  --soft: #b0c1c2;
+  --dim: #7b9094;
+
+  /* The marketing hexes, used where the brand itself is named. */
+  --znn: #00d557;
+  --nom: #0061eb;
+  --new: #f91690;
+
+  /* #0061EB is too dark to read as text on near-black; this is the same blue
+     lifted to where it passes contrast, and it is what links use. */
+  --nom-ink: #5da4ff;
+  --znn-ink: #21e575;
+  --new-ink: #ff5bad;
+
+  --warn: #f5b13d;
+  --danger: #ff4f6b;
+
+  --plasma: linear-gradient(135deg, #7bf06c 0%, #00d557 48%, #00b98a 100%);
+
+  /* A lit top edge. On near-black a plain drop shadow vanishes, so elevation
+     reads from the light catching the upper border instead. */
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+  --shadow-pop: 0 2px 4px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.75);
+
+  --radius: 6px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* How much of what is behind them panels let through. Surfaces are nearly
+     opaque on purpose: the lattice should be felt at the edges of things,
+     never read as a texture across a column of numbers. */
+  --surface-glass: color-mix(in srgb, var(--surface) 86%, transparent);
+
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f7faf9;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --sunk: #eef3f2;
+  --line: #dde5e4;
+  --line-strong: #c2cecd;
+
+  --fg: #0a1416;
+  --soft: #3d5254;
+  --dim: #5e7375;
+
+  --nom-ink: #0052c9;
+  --znn-ink: #00803a;
+  --new-ink: #c2106f;
+
+  --warn: #9a6200;
+  --danger: #cf1330;
+
+  --edge: none;
+  --shadow-panel: 0 1px 2px rgb(10 20 22 / 0.06), 0 6px 20px -12px rgb(10 20 22 / 0.2);
+  --shadow-pop: 0 2px 6px rgb(10 20 22 / 0.08), 0 16px 40px -16px rgb(10 20 22 / 0.28);
+
+  /* Green over white goes muddy far sooner than green over near-black, so the
+     light theme lets less of it through. */
+  --surface-glass: color-mix(in srgb, var(--surface) 92%, transparent);
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: 'Space Grotesk Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-soft: var(--soft);
+  --color-dim: var(--dim);
+
+  --color-znn: var(--znn-ink);
+  --color-nom: var(--nom-ink);
+  --color-new: var(--new-ink);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --radius-zvm: 6px;
+}
+
+/* The page background lives on html alone, which paints the canvas. Putting it
+   on body as well would repaint it as an ordinary block background, and block
+   backgrounds paint *after* negative z-index layers: that is exactly where the
+   cursor glow sits, so body's copy would bury it. */
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  /* iOS enlarges text it judges too small when a phone turns to landscape,
+     which breaks every fixed-size number on the page. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Every row is a button; the grey flash a phone paints over a tapped one is
+   a second, uglier pressed state on top of the page's own. */
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Visible, on-brand, and never removed — a keyboard is a first-class way to
+   read a table of hashes. */
+:focus-visible {
+  outline: 2px solid var(--znn-ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--znn) 30%, transparent);
+  color: var(--fg);
+}
+
+/* A hash column is long, and a scrollbar across it should not shout. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dim);
+}
+
+@layer components {
+  /* The system's second signature: mono, uppercase, 11px, wide tracking. It
+     earns its place on table headers and stat captions, which is where the
+     system puts it. Never above a heading, never over prose. */
+  .ledger {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'ss02' on;
+  }
+
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .card {
+    background: var(--surface-glass);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--edge);
+  }
+
+  .panel {
+    background: var(--surface-glass);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--edge), var(--shadow-panel);
+  }
+
+  .pop {
+    background: var(--raised);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--edge), var(--shadow-pop);
+  }
+
+  .link {
+    color: var(--nom-ink);
+    transition: color 150ms var(--ease);
+  }
+  .link:hover {
+    color: var(--fg);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+
+  /* Plasma: the ZNN logo's gradient, on primary actions and the live edge of
+     the rail. Nowhere else — its power is being reserved. The sheen is a
+     single specular highlight, not a second gradient. */
+  .btn-plasma {
+    position: relative;
+    background: var(--plasma);
+    color: #04140a;
+    font-weight: 600;
+    border-color: transparent;
+    overflow: hidden;
+  }
+  .btn-plasma::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 55%);
+    pointer-events: none;
+  }
+  .btn-plasma:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  .btn-plasma:disabled {
+    background: var(--sunk);
+    color: var(--dim);
+    border-color: var(--line);
+  }
+  .btn-plasma:disabled::after {
+    display: none;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--radius);
+    padding: 7px 13px;
+    font-size: 13.5px;
+    line-height: 1.3;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease);
+  }
+  /* Hover only where there is a hover: on a touch screen :hover sticks to
+     whatever was tapped last, and a copy button stays lit after the copy. */
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) {
+      background: var(--raised);
+      border-color: var(--dim);
+    }
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-sm {
+    padding: 4px 9px;
+    font-size: 12.5px;
+  }
+
+  .btn-quiet {
+    border-color: transparent;
+    color: var(--dim);
+  }
+  @media (hover: hover) {
+    .btn-quiet:hover:not(:disabled) {
+      color: var(--fg);
+      border-color: var(--line);
+    }
+  }
+
+  /* A small button is a 24px target, which a thumb misses. On a coarse
+     pointer it grows to 40px without its icon growing with it. */
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-width: 40px;
+      min-height: 40px;
+    }
+  }
+
+  .input {
+    width: 100%;
+    background: var(--sunk);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--fg);
+    outline: none;
+    transition: border-color 150ms var(--ease), background 150ms var(--ease);
+  }
+  .input::placeholder {
+    color: var(--dim);
+  }
+  .input:focus {
+    border-color: var(--znn-ink);
+    background: var(--surface);
+  }
+
+  .th {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-align: left;
+    padding: 9px 12px;
+    background: var(--sunk);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  .td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child .td {
+    border-bottom: 0;
+  }
+
+  tbody tr {
+    transition: background 150ms var(--ease);
+  }
+  tbody tr:hover .td {
+    background: color-mix(in srgb, var(--raised) 60%, transparent);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 99px;
+    padding: 1px 9px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 18px;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  /* A dot the size of a full stop, so state reads at a glance and still pairs
+     with a word — status never relies on color alone. */
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    flex: none;
+  }
+}
+
+/* One orchestrated entrance, on the rail. Everything else moves only to say
+   that something is loading or has just changed. */
+@keyframes rail-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes land {
+  0% {
+    background: color-mix(in srgb, var(--new) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+/* A row that just arrived flashes pink once, then never again. */
+.just-landed .td {
+  animation: land 1.6s var(--ease) 1;
+}
+
+.live-dot {
+  animation: breathe 2.4s var(--ease) infinite;
+}
+
+/* Something is on its way. Opacity only, staggered by the caller, so a row of
+   placeholders reads as a wave travelling across them rather than as a still
+   grey band that might just as well be broken. */
+@keyframes wait {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.waiting {
+  animation: wait 1.2s var(--ease) infinite both;
+}
+
+/* A skeleton bar, with the same sweep the table skeletons use. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--sunk);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 25%;
+  background: var(--line);
+  animation: sweep 1.4s var(--ease) infinite;
+}
+
+/* A counter that just changed: pink for a moment, then back to its own colour.
+   Only a `from` frame, so it settles into whatever colour the element inherits
+   — green for the ZVM, blue for NoM — without having to be told which. */
+@keyframes tick {
+  from {
+    color: var(--new-ink);
+  }
+}
+
+.tick {
+  animation: tick 1.2s var(--ease) 1;
+}
+
+/* A bar of the rail growing up from its base the first time it is drawn. */
+@keyframes rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* A line chart drawing itself left to right once its first data arrives. */
+@keyframes wipe {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* No reduced-motion rule, on the owner's instruction (2026-09-21), the same
+   call zvm-karum made. Windows reports prefers-reduced-motion whenever
+   "Animation effects" is off, which on the machine this is built for is a
+   setting nobody chose, and the old blanket rule cut every animation here to
+   zero: the rail never breathed and a new block never landed. The motion is
+   part of how this page says the chain is live, so it runs whatever the system
+   says. */
+
+/* --- The status page's own ------------------------------------------------
+
+   Status is the one place this page uses colour for meaning beyond the three
+   structural hues, and the three states are reserved for it:
+
+       operational  green   (the ZVM's own)
+       degraded     amber, and hatched at 45°
+       down         red
+
+   Green and amber are too close for a deuteranope (validated: ΔE 5.8 on the
+   dark surface, 4.6 on the light), so degraded never relies on hue: its bars
+   carry a tone-on-tone hatch, and every state is also a word and an icon. */
+
+:root {
+  --ok: #21e575;
+  --degraded: #f5b13d;
+  --down: #ff4f6b;
+  --none: #1f2c31;
+}
+:root[data-theme='light'] {
+  --ok: #00a846;
+  --degraded: #b87800;
+  --down: #cf1330;
+  --none: #dfe7e6;
+}
+
+.s-operational {
+  --s: var(--ok);
+}
+.s-degraded {
+  --s: var(--degraded);
+}
+.s-down {
+  --s: var(--down);
+}
+.s-none,
+.s-unknown {
+  --s: var(--dim);
+}
+
+.fill-operational {
+  background: var(--ok);
+}
+.fill-degraded {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--degraded) 0 3px,
+    color-mix(in srgb, var(--degraded) 55%, var(--surface)) 3px 5px
+  );
+}
+.fill-down {
+  background: var(--down);
+}
+.fill-none {
+  background: var(--none);
+}
+
+/* The overall banner's light: a wash of the state's colour from the left edge,
+   drifting slowly so a page left open still looks awake. */
+@keyframes drift {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateX(-50%);
+  }
+}
+.banner-wash {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+/* The wash is a layer twice the banner's width, slid across it. Animating
+   background-position, as this did, repaints the banner on every frame for as
+   long as the page is open; a transform is moved by the compositor. */
+.banner-wash::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 200%;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--s) 16%, transparent) 0%,
+    color-mix(in srgb, var(--s) 4%, transparent) 45%,
+    transparent 70%,
+    color-mix(in srgb, var(--s) 6%, transparent) 100%
+  );
+  animation: drift 14s var(--ease) infinite;
+  will-change: transform;
+}
+
+/* A ring that leaves the live dot and fades, once per breath: the page's
+   heartbeat, in the state's colour. */
+@keyframes ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.ping {
+  animation: ping 2.4s var(--ease) infinite;
+}
+
+/* Bars grow from their baseline, staggered by the caller left to right. */
+.bar-rise {
+  transform-origin: bottom;
+  animation: rise 520ms var(--ease) both;
+}
+
+.rail-in {
+  animation: rail-in 480ms var(--ease) both;
+}
+
+/* A row whose state just changed flashes pink once, like a new block. */
+.just-changed {
+  animation: land 1.6s var(--ease) 1;
+}
+
+.wipe {
+  transform-origin: left;
+  animation: wipe 700ms var(--ease) both;
+}
+
+/* One pass per interval, phased by a negative delay set from the clock. */
+@keyframes fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.countdown {
+  transform-origin: left;
+  animation: fill 300s linear infinite;
+}
+
+/* The mobile menu drops out of the header rather than appearing in place. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.menu-in {
+  animation: menu-in 180ms var(--ease) both;
+}

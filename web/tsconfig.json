@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "jsx": "preserve",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+            "@zvm/web/*": ["../zvm-core/web/src/*"],
+      // @zvm/web is compiled as part of this app, from outside its directory,
+      // so node's upward search would not find these. They are peer
+      // dependencies: the app's copy is the one that must be used.
+      "vue": ["./node_modules/vue"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "env.d.ts",
+    "vite.config.ts",
+    "../zvm-core/web/src/components/ZenoglyphMark.vue",
+    "../zvm-core/web/src/components/LatticeBackground.vue"
+  ]
+}

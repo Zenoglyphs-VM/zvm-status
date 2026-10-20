@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The phone's browser bar in the page's own background, per theme. -->
+    <meta name="theme-color" content="#06090a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7faf9" media="(prefers-color-scheme: light)" />
+    <title>ZVM Status</title>
+    <meta name="description" content="Whether the ZVM explorer, glyphswap, karum, rain, zchan, the ZVM node and chain 69's Zenon node are up, and thirty days of how they have been." />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Before first paint, so the page never flashes the wrong theme. The key
+      // is the explorer's, so a visitor's choice follows them between the two.
+      try {
+        var t = localStorage.getItem('zvm.theme')
+        if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

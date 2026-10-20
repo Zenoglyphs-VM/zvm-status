@@ -1,0 +1,26 @@
+{
+  "name": "zvm-status-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The status page for a ZVM devnet: thirty days of checks, drawn from the zvm-status API.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.5",
+    "@fontsource-variable/space-grotesk": "^5.2.5",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^26.6.2",
+    "@vitejs/plugin-vue": "^6.0.4",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.7.3",
+    "vite": "^7.3.1",
+    "vue-tsc": "^3.1.1"
+  }
+}
