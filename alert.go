@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"time"
 )
+
+const notificationTimeout = 30 * time.Second
 
 // Mailer sends alerts through an ordinary SMTP relay with a login.
 //
@@ -24,6 +27,28 @@ type Mailer struct {
 func (m *Mailer) Configured() bool { return m != nil && m.Host != "" && len(m.To) > 0 }
 
 func (m *Mailer) Send(subject, body string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), notificationTimeout)
+	defer cancel()
+	return m.SendContext(ctx, subject, body)
+}
+
+func (m *Mailer) SendContext(ctx context.Context, subject, body string) (err error) {
+	ctx, cancel := context.WithTimeout(ctx, notificationTimeout)
+	defer cancel()
+	defer func() {
+		if err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		} else if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+			// The socket deadline can fire before the context timer runs.
+			err = context.DeadlineExceeded
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !m.Configured() {
 		return fmt.Errorf("SMTP is not configured")
 	}
@@ -47,21 +72,40 @@ func (m *Mailer) Send(subject, body string) error {
 	if m.User != "" {
 		auth = smtp.PlainAuth("", m.User, m.Pass, m.Host)
 	}
-	// 465 is TLS from the first byte; everything else (587, 25, 1025 for a
-	// local catcher) starts plain, and smtp.SendMail upgrades with STARTTLS
-	// when the server offers it.
-	if m.Port != "465" {
-		return smtp.SendMail(addr, auth, from, m.To, []byte(msg))
-	}
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 20 * time.Second}, "tcp", addr, &tls.Config{ServerName: m.Host})
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return err
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return err
+		}
+	}
+	rawConn := conn
+	stop := context.AfterFunc(ctx, func() { rawConn.Close() })
+	defer stop()
+	if m.Port == "465" {
+		secure := tls.Client(conn, &tls.Config{ServerName: m.Host})
+		if err := secure.HandshakeContext(ctx); err != nil {
+			return err
+		}
+		conn = secure
 	}
 	c, err := smtp.NewClient(conn, m.Host)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+	// Preserve the relay's STARTTLS negotiation while bounding greeting,
+	// handshake, commands, body and final acceptance by the same context.
+	if m.Port != "465" {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(&tls.Config{ServerName: m.Host}); err != nil {
+				return err
+			}
+		}
+	}
 	if auth != nil {
 		if err := c.Auth(auth); err != nil {
 			return err

@@ -31,8 +31,11 @@ must fail twice, twenty seconds apart, to count as down.
 Alerts need an SMTP relay: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
 `SMTP_FROM`, `ALERT_TO`. `./zvm-status -test-alert` sends one message and exits.
 
-The prober runs on the machine it watches, so it cannot report that machine
-being off: the page just stops gaining bars.
+The prober runs on the machine it watches, so detecting that machine being off
+requires a separately operated observer. `/healthz`, summary validators and the
+page now expose expired or failed monitoring instead of retaining an apparently
+operational result. See [independent monitoring](docs/OBSERVING.md) for the
+one-shot observer, notification evidence and the required operator drill.
 
 ## Deploy the page
 

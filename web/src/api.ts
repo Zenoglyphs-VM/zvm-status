@@ -4,6 +4,7 @@
 // the wrong outage.
 
 import {markRaw, reactive, ref} from 'vue'
+import {monitoringDeadline, type Monitoring, type MonitoringDeadline} from './freshness'
 
 export type State = 'operational' | 'degraded' | 'down' | 'unknown'
 
@@ -51,6 +52,7 @@ export interface Summary {
   days: number
   overall: State
   alerts: boolean
+  monitoring?: Monitoring
   components: Component[]
   incidents: Incident[] | null
 }
@@ -59,6 +61,7 @@ export const status = reactive({
   summary: null as Summary | null,
   error: null as string | null,
   fetchedAt: 0,
+  deadline: null as MonitoringDeadline | null,
 })
 
 // A copy served away from the gateway (GitHub Pages) sets VITE_GATEWAY to the
@@ -85,6 +88,7 @@ export async function refresh() {
       etag = tag
     }
     status.error = null
+    status.deadline = monitoringDeadline(status.summary, Date.now(), performance.now(), status.deadline)
     status.fetchedAt = Date.now()
   } catch (err: any) {
     status.error = err?.name === 'TimeoutError' ? 'the status API did not answer' : String(err?.message ?? err)
@@ -106,7 +110,8 @@ let timer = 0
 function schedule() {
   clearTimeout(timer)
   if (document.visibilityState !== 'visible') return
-  const iv = status.summary?.interval ?? 300
+  const configured = status.summary?.interval
+  const iv = Number.isSafeInteger(configured) && configured! >= 1 ? configured! : 300
   const t = Date.now() / 1000
   const boundary = Math.floor(t / iv) * iv
   const waiting = lastRound() < boundary && t - boundary < 120
@@ -145,11 +150,13 @@ export async function fetchRecent(id: string): Promise<Point[]> {
 // that show a live time subscribe to it themselves: when the page root read
 // it, every row re-rendered once a second. It stops while the tab is hidden.
 export const now = ref(Date.now())
+export const monotonicNow = ref(performance.now())
 let clock = 0
 function tick() {
   clearInterval(clock)
   now.value = Date.now()
-  if (document.visibilityState === 'visible') clock = window.setInterval(() => (now.value = Date.now()), 1000)
+  monotonicNow.value = performance.now()
+  if (document.visibilityState === 'visible') clock = window.setInterval(() => {now.value = Date.now(); monotonicNow.value = performance.now()}, 1000)
 }
 tick()
 document.addEventListener('visibilitychange', tick)

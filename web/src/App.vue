@@ -8,8 +8,8 @@ import ComponentRow from './components/ComponentRow.vue'
 import ConnectPanel from './components/ConnectPanel.vue'
 import {askChain, host, nomChain} from './chain'
 import Elapsed from './components/Elapsed.vue'
-import NextCheck from './components/NextCheck.vue'
-import {lastRound, status, start, span, type Component, type State} from './api'
+import MonitoringHeader from './components/MonitoringHeader.vue'
+import {lastRound, status, start, span, type Component} from './api'
 
 const s = computed(() => status.summary)
 
@@ -27,31 +27,6 @@ const groups = computed(() => {
     g.items.push(c)
   }
   return out
-})
-
-// The headline, the way status pages have converged on phrasing it: one down
-// component is a partial outage, half of them is a major one.
-const headline = computed(() => {
-  const cs = s.value?.components ?? []
-  const down = cs.filter((c) => c.status === 'down').length
-  const degraded = cs.filter((c) => c.status === 'degraded').length
-  if (!cs.length) return {state: 'unknown' as State, text: 'Waiting for the first check'}
-  if (down && down >= cs.length / 2) return {state: 'down' as State, text: 'Major outage'}
-  if (down) return {state: 'down' as State, text: down === 1 ? 'Partial outage' : `Partial outage · ${down} services down`}
-  if (degraded) return {state: 'degraded' as State, text: 'Degraded performance'}
-  return {state: 'operational' as State, text: 'All systems operational'}
-})
-
-const interval = computed(() => s.value?.interval ?? 300)
-
-// The bar under the headline fills over each interval as one CSS animation,
-// started at the right phase by a negative delay. It used to be a width set
-// every second, which laid the banner out again every second; a transform runs
-// on the compositor. The phase is recomputed with every new summary, so a
-// laptop that slept comes back in step with the prober's grid.
-const barPhase = computed(() => {
-  void s.value
-  return `-${((Date.now() / 1000) % interval.value).toFixed(2)}s`
 })
 
 const lastCheck = computed(() => (s.value ? lastRound() : 0))
@@ -259,42 +234,7 @@ onUnmounted(() => {
       </template>
 
       <template v-else>
-      <!-- The headline. -->
-      <section class="panel overflow-hidden rail-in" :class="`s-${headline.state}`">
-        <div class="banner-wash px-5 py-6 sm:py-7 flex items-center gap-4">
-          <span class="relative flex size-4 shrink-0">
-            <span class="ping absolute inset-0 rounded-full" style="background: var(--s)" />
-            <span class="relative size-4 rounded-full live-dot" style="background: var(--s); box-shadow: 0 0 18px color-mix(in srgb, var(--s) 60%, transparent)" />
-          </span>
-          <div class="min-w-0">
-            <h1 v-if="s" class="text-[21px] sm:text-[26px] font-semibold tracking-[-0.02em] leading-tight">{{ headline.text }}</h1>
-            <div v-else class="skeleton h-6 w-full max-w-64" />
-            <p class="text-[13px] text-dim mt-1">
-              {{ host }} · chain {{ nomChain }}<span class="hidden sm:inline"> · checked every {{ span(interval) }}</span>
-            </p>
-            <!-- A phone has no room beside the headline, so the countdown goes under it. -->
-            <p class="sm:hidden text-[12.5px] text-dim mt-0.5">
-              Next check in <NextCheck :interval="interval" class="text-fg" /> · every {{ span(interval) }}
-            </p>
-          </div>
-          <span class="grow" />
-          <div class="hidden sm:block text-right text-[12px] text-dim">
-            <div class="ledger">Next check</div>
-            <NextCheck :interval="interval" class="text-[18px] text-fg" />
-          </div>
-        </div>
-        <!-- How far through the current five minutes we are. -->
-        <div class="h-[3px] bg-sunk overflow-hidden">
-          <div
-            class="h-full countdown"
-            :style="{
-              animationDuration: `${interval}s`,
-              animationDelay: barPhase,
-              background: headline.state === 'operational' ? 'var(--plasma)' : 'var(--s)',
-            }"
-          />
-        </div>
-      </section>
+      <MonitoringHeader />
 
       <p v-if="status.error" class="card px-4 py-2.5 text-[13px] flex items-center gap-2 rail-in" style="color: var(--danger)">
         <Icon name="alert" :size="15" />
@@ -333,7 +273,7 @@ onUnmounted(() => {
         <div class="px-4 py-2.5 border-b border-line flex items-center">
           <span class="ledger">{{ g.name }}</span>
           <span class="grow" />
-          <span class="text-[11.5px] text-dim">{{ g.items.filter((c) => c.status === 'operational').length }}/{{ g.items.length }} operational</span>
+          <span class="text-[11.5px] text-dim">{{ g.items.filter((c) => c.status === 'operational').length }}/{{ g.items.length }} last observed operational</span>
         </div>
         <ComponentRow
           v-for="(c, ci) in g.items"
@@ -388,7 +328,7 @@ onUnmounted(() => {
         </div>
         <div class="flex items-center gap-1.5">
           <Icon name="mail" :size="13" />
-          {{ s?.alerts ? 'Alerts emailed when a service goes down' : 'Alerts not configured — outages are recorded only' }}
+          {{ s?.alerts ? 'Email alert relay configured' : 'Alerts not configured — outages are recorded only' }}
         </div>
       </div>
     </footer>

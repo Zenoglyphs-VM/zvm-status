@@ -25,6 +25,13 @@ func env(key, def string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "observe" {
+		if err := observerCommand(os.Args[2:], os.Stdout); err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
 	var (
 		listen    = flag.String("listen", ":8090", "address the status API listens on")
 		dbPath    = flag.String("db", "status.db", "SQLite file for the history")
@@ -43,6 +50,9 @@ func main() {
 		testAlert = flag.Bool("test-alert", false, "send one test email and exit")
 	)
 	flag.Parse()
+	if *every < time.Second || *every > (time.Duration(1<<63-1)-time.Minute)/2 {
+		log.Fatal("-every must be at least one second and permit a bounded freshness window")
+	}
 	if *origin == "" {
 		log.Fatal("-origin is not set: pass it, or set STATUS_ORIGIN")
 	}
@@ -119,9 +129,15 @@ type Watcher struct {
 	retry  time.Duration
 	public string
 
-	mu     sync.RWMutex
-	last   map[string]Check
-	lastAt time.Time // when the last round started; zero until the first
+	mu                   sync.RWMutex
+	last                 map[string]Check
+	lastAt               time.Time                     // when the last round started; zero until the first
+	now                  func() time.Time              // nil uses the production clock
+	leaseStarted         time.Time                     // retains the process monotonic clock
+	leaseAge             func(time.Time) time.Duration // nil uses time.Since
+	roundFailed, stopped bool
+	mail                 monitoringMail
+	runContext           context.Context
 
 	cache bodyCache
 }
@@ -130,6 +146,11 @@ type Watcher struct {
 // every component's checks land in the same slots and a day's bar is 288 of
 // them however often the process restarts.
 func (w *Watcher) Run(ctx context.Context) {
+	w.mu.Lock()
+	w.stopped = false
+	w.runContext = ctx
+	w.mu.Unlock()
+	defer func() { w.mu.Lock(); w.stopped = true; w.mu.Unlock() }()
 	w.round(ctx)
 	for {
 		now := time.Now()
@@ -147,7 +168,8 @@ func (w *Watcher) Run(ctx context.Context) {
 }
 
 func (w *Watcher) round(ctx context.Context) {
-	at := time.Now().Truncate(time.Second)
+	leaseStarted := time.Now()
+	at := w.timeNow().Truncate(time.Second)
 	var wg sync.WaitGroup
 	results := make([]Result, len(w.comps))
 	for i, c := range w.comps {
@@ -175,15 +197,18 @@ func (w *Watcher) round(ctx context.Context) {
 	}
 
 	last := map[string]Check{}
+	failed := false
 	var fell, rose []string
 	for i, c := range w.comps {
 		r := results[i]
 		last[c.ID] = Check{At: at, Status: r.Status, Latency: r.Latency.Milliseconds(), Detail: r.Detail}
 		if err := w.store.Record(c.ID, at, r); err != nil {
+			failed = true
 			log.Printf("record %s: %v", c.ID, err)
 		}
 		down, up, err := w.incident(c, at, r)
 		if err != nil {
+			failed = true
 			log.Printf("incident %s: %v", c.ID, err)
 		}
 		if down != "" {
@@ -198,6 +223,8 @@ func (w *Watcher) round(ctx context.Context) {
 	}
 	w.mu.Lock()
 	w.last, w.lastAt = last, at
+	w.leaseStarted = leaseStarted
+	w.roundFailed = failed
 	w.mu.Unlock()
 	w.notify(at, fell, rose)
 }
@@ -298,8 +325,38 @@ func (w *Watcher) email(subject, body string) {
 		log.Printf("alert not sent (no SMTP): %s", subject)
 		return
 	}
+	w.mu.Lock()
+	if w.mail.inFlight {
+		w.mail.failed = true
+		w.mail.overlapped = true
+		w.mu.Unlock()
+		log.Print("alert not sent: another relay attempt is in flight")
+		return
+	}
+	w.mail.started = w.timeNow()
+	w.mail.inFlight = true
+	w.mail.overlapped = false
+	parent := w.runContext
+	w.mu.Unlock()
+	if parent == nil {
+		parent = context.Background()
+	}
 	go func() {
-		if err := w.mailer.Send(subject, body); err != nil {
+		ctx, cancel := context.WithTimeout(parent, notificationTimeout)
+		defer cancel()
+		err := w.mailer.SendContext(ctx, subject, body)
+		w.mu.Lock()
+		w.mail.inFlight = false
+		if err != nil {
+			w.mail.failed = true
+		} else {
+			w.mail.accepted = w.timeNow()
+			if !w.mail.overlapped {
+				w.mail.failed = false
+			}
+		}
+		w.mu.Unlock()
+		if err != nil {
 			log.Printf("alert %q: %v", subject, err)
 			return
 		}
