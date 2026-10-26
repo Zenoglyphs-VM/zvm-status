@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy qualified GitHub Pages artifact
 
 on:
   push:
@@ -7,57 +7,105 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# One deploy at a time. In-progress runs finish rather than being cancelled, so
-# a half-published site is never left live.
 concurrency:
   group: pages
   cancel-in-progress: false
 
+# These are public configuration values, never credentials. The exact record is
+# created outside Git to avoid a commit containing its own source-commit hash.
+env:
+  PAGES_DEPLOYMENT_RECORD: ${{ vars.PAGES_DEPLOYMENT_RECORD }}
+  PAGES_APPROVED_DEPLOYMENT_SHA256: ${{ vars.PAGES_APPROVED_DEPLOYMENT_SHA256 }}
+  VITE_ZVM_NODE: ${{ vars.ZVM_NODE }}
+  VITE_GATEWAY: ${{ vars.ZVM_GATEWAY }}
+  VITE_NOM_NODE: ${{ vars.NOM_NODE_WS }}
+  BASE_PATH: /zvm-status/
+  PYTHONDONTWRITEBYTECODE: '1'
+
 jobs:
   build:
+    if: github.repository == 'Zenoglyphs-VM/zvm-status' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.seal.outputs.manifest_sha256 }}
     steps:
-      # @zvm/web is compiled from the zvm-core submodule.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: true
-
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - name: Require the exact approved, current source and configuration
+        run: >-
+          python3 -B tools/pages-gate/pages_gate.py check
+          --source "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+          --core "$(git rev-parse HEAD:zvm-core)"
+      - name: Offline gate controls
+        run: python3 -B -m unittest discover -s tools/pages-gate -p 'test_*.py' -v
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-
       - run: npm ci
-
+        working-directory: web
       - run: npm run typecheck
-
-      - name: Build
-        # The node and the origin the other apps are under come from the
-        # organisation's Actions variables, so every site is repointed in one
-        # place and none is written into the source.
-        env:
-          VITE_ZVM_NODE: ${{ vars.ZVM_NODE }}
-          VITE_GATEWAY: ${{ vars.ZVM_GATEWAY }}
-          VITE_NOM_NODE: ${{ vars.NOM_NODE_WS }}
-        run: BASE_PATH="/${GITHUB_REPOSITORY#*/}/" npm run build
-
-      - uses: actions/upload-pages-artifact@v3
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - name: Seal the completed build and export its manifest digest
+        id: seal
+        run: >-
+          python3 -B tools/pages-gate/pages_gate.py seal --github-output
+          --artifact "$GITHUB_WORKSPACE/web/dist"
+          --source "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+          --core "$(git rev-parse HEAD:zvm-core)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
         with:
+          name: qualified-pages-${{ github.sha }}
           path: web/dist
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # No dependency installation or rebuild occurs in the privileged job.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: _qualified_site
+          merge-multiple: true
+      - name: Verify the exact build manifest, bytes, configuration and current validity
+        env:
+          EXPECTED_MANIFEST_SHA256: ${{ needs.build.outputs.manifest_sha256 }}
+        run: >-
+          python3 -B tools/pages-gate/pages_gate.py verify
+          --artifact "$GITHUB_WORKSPACE/_qualified_site"
+          --manifest-sha256 "$EXPECTED_MANIFEST_SHA256"
+          --source "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+          --core "$(git rev-parse HEAD:zvm-core)"
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          name: github-pages-${{ github.run_id }}
+          path: _qualified_site
+          retention-days: 1
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}

@@ -2,7 +2,17 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
   pull_request:
+    paths-ignore:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
 
 permissions:
   contents: read

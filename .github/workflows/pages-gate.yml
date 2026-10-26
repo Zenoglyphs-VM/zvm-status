@@ -1,0 +1,33 @@
+name: Pages qualification controls
+
+on:
+  push:
+    paths:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
+      - .github/workflows/ci.yml
+  pull_request:
+    paths:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Offline configuration, artifact and CLI controls
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest discover -s tools/pages-gate -p 'test_*.py' -v
