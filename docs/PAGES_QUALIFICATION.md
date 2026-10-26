@@ -114,8 +114,9 @@ source/Core/repository/config mismatches, validity edges, unsafe endpoint
 shapes, malformed/duplicate/oversized JSON, complete file-set and same-size
 tampering, rewritten manifests, reserved output preservation, repeated seals,
 visible metadata in both routes, limits and the command-line handoff/redaction.
-Link, special-file and hard-link rejection uses simulated stat metadata; it
-does not claim actual filesystem/platform integration coverage. Generated
+The original `test_pages_gate.py` link, special-file and hard-link controls
+use simulated stat metadata. The separate synthetic handoff controls below add
+actual Linux fixture checks; other platforms remain unqualified. Generated
 fixtures contain no credentials and contact no server.
 
 The checker caps record/manifest bytes, artifact entries, total file bytes,
@@ -123,7 +124,38 @@ HTML size, path length and depth. It rejects links, special files, case aliases
 and hidden paths. Hashing streams in bounded chunks. It detects observed file
 changes, but supplies neither filesystem transactions nor power-loss durability.
 An interrupted/failed seal is unqualified; preserve its failure evidence and
-rebuild fresh scratch rather than retrying over partial outputs. Actual hosted
+rebuild fresh scratch rather than retrying over partial outputs. Actual application
 artifact transfer, environment review, Pages delivery, headers/cache behavior,
 browser rendering, clock authority and independent chain evidence need separate
 qualification. Other applications remain outside this initial D03 slice.
+
+## Synthetic hosted artifact handoff
+
+The separate Pages qualification workflow adds a bounded producer and consumer
+using the unchanged production `pages_gate.py` CLI. The producer seals two small
+synthetic HTML routes and a text fixture, uploads at most 32 KiB with the pinned
+artifact action, and exports the immutable artifact ID, exact record bytes and
+trusted record/manifest digests through job outputs. The consumer downloads only
+that ID into a fresh directory and runs production verification. No artifact
+name search, rebuild, application dependencies or Pages permission is involved.
+The synthetic record uses reserved `.invalid` endpoints and artificial evidence
+digests. It never reads repository deployment variables or supplies accepted
+chain/release evidence.
+
+The consumer requires the production CLI to refuse ten changed-file or binding
+cases, including same-size tampering, a rewritten manifest and wrong independent
+pins/source/Core/repository/environment. It also exercises actual Linux symlink,
+root-link, hard-link and FIFO refusal against disposable fixture copies. The
+transferred input remains unchanged. The expiry control calls the production
+verification function at the record's exact `validUntil`; this is controlled-time
+coverage, not a wall-clock expiry wait. Local directory-copy controls do not
+establish hosted transfer; only a source-bound successful producer/upload and
+consumer/download job pair can establish that limited handoff result.
+
+These jobs have `contents: read` only, three-minute limits and one-day artifact
+retention. This workflow exercises synthetic transport and checker integration.
+It does not qualify the actual application build, accepted release/epoch record,
+environment protection, Pages packaging/delivery, DNS, browser rendering, cache
+revocation or production operation. The deployment workflow and production gate
+remain unchanged. Expired intermediate artifacts must be reported unavailable;
+an old run or local fixture cannot substitute for retained exact-run evidence.
