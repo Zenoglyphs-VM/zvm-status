@@ -1,0 +1,89 @@
+name: Pages qualification controls
+
+on:
+  push:
+    paths:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
+      - .github/workflows/ci.yml
+  pull_request:
+    paths:
+      - tools/pages-gate/**
+      - docs/PAGES_QUALIFICATION.md
+      - .github/workflows/pages.yml
+      - .github/workflows/pages-gate.yml
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Offline configuration, artifact and CLI controls
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest discover -s tools/pages-gate -p 'test_*.py' -v
+
+  synthetic-producer:
+    needs: controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.fixture.outputs.manifest_sha256 }}
+      record_sha256: ${{ steps.fixture.outputs.record_sha256 }}
+      record_base64: ${{ steps.fixture.outputs.record_base64 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Seal bounded synthetic text with the production checker
+        id: fixture
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: >-
+          python3 -B tools/pages-gate/artifact_handoff.py produce --github-output
+          --artifact "$RUNNER_TEMP/synthetic-pages-handoff"
+          --source "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+          --core "$(git rev-parse HEAD:zvm-core)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: synthetic-pages-handoff-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/synthetic-pages-handoff
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  synthetic-consumer:
+    needs: synthetic-producer
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.synthetic-producer.outputs.artifact_id }}
+          path: ${{ runner.temp }}/downloaded-pages-handoff
+          merge-multiple: true
+      - name: Verify transferred bytes, negative controls and actual Linux file types
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          SYNTHETIC_RECORD_BASE64: ${{ needs.synthetic-producer.outputs.record_base64 }}
+          SYNTHETIC_RECORD_SHA256: ${{ needs.synthetic-producer.outputs.record_sha256 }}
+          SYNTHETIC_MANIFEST_SHA256: ${{ needs.synthetic-producer.outputs.manifest_sha256 }}
+        run: >-
+          python3 -B tools/pages-gate/artifact_handoff.py consume
+          --artifact "$RUNNER_TEMP/downloaded-pages-handoff"
+          --source "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY"
+          --core "$(git rev-parse HEAD:zvm-core)"
