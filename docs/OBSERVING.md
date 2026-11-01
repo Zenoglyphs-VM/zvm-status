@@ -95,3 +95,22 @@ aggregate-only reports are degraded until the producer supplies the contract;
 no historical success is fabricated. These read-only HTTP observations do not
 prove independent chain authority, successful payouts or off-host notification
 delivery. External deployment and operator acceptance remain separate gates.
+
+
+### Bounded Bridge command integration
+
+The Linux `bridge-process` CI job pins the companion Bridge source and its Core
+gitlink, builds both production commands with race instrumentation, and launches
+the actual `zvm-bridge bridge` and `zvm-status -once` entrypoints as separate
+processes. A private SQLite file and loopback-only NoM/EVM read fixtures exercise
+complete success, a failed critical step followed by a later no-op, an in-progress
+sweep with a retained previous success, complete recovery, and a stopped producer.
+Unexpected RPC methods fail the test; no transaction publication is permitted.
+Missing executable inputs fail the dedicated tagged lane instead of skipping it.
+Every child has a deadline, capped output and an explicit join.
+
+This is controlled Linux process integration. Other Status component verdicts,
+actual NoM/execution-client agreement, real deposits/payouts or committee custody,
+independent off-host monitoring, recipient delivery, deployment and operator or
+maintainer acceptance remain separate. The public devnet configuration is fixture
+input, not production configuration or chain authority.
