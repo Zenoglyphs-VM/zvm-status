@@ -90,7 +90,7 @@ func TestBridgeGrading(t *testing.T) {
 		want   Status
 		detail string
 	}{
-		{"healthy", 200, `{"healthy":true,"lastOkAt":"` + recent + `","payouts":{"paid":6}}`, OK, "6 paid"},
+		{"healthy", 200, completeBridgeReport(time.Now().UTC()), OK, "6 paid"},
 		{"last sweep failed", 200, `{"healthy":false,"lastOkAt":"` + recent + `","lastError":"receive: plasma"}`, Degraded, "receive: plasma"},
 		{"loop stopped", 200, `{"healthy":true,"lastOkAt":"` + stale + `","lastError":"sign: no quorum"}`, Down, "no successful sweep for 25m0s: sign: no quorum"},
 		{"cannot reach its chains", 502, `dial tcp: connection refused`, Down, "HTTP 502"},

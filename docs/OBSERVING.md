@@ -78,3 +78,20 @@ failure, recovery and missed-run evidence.
 Local HTTP/SQLite/SMTP fixtures establish selected code behavior. They do not
 prove independent placement, actual host death, recipient delivery, production
 operations or activation. Those require a separately authorized operator drill.
+
+## Bridge complete sweep admission
+
+An operational bridge observation requires a completed, non-running sweep and
+all five critical steps: receive_deposits, scan_withdrawals, pay_withdrawals,
+confirm_payouts and fund_plasma. Every step must have succeeded without an error,
+have ordered start/finish timestamps and finish no later than the completed
+sweep. lastOkAt and lastSweepAt must name the same completion second. The
+existing ten-minute last-success limit and one-minute future-clock allowance
+remain in force. Missing, extra, failed, canceled or incomplete step evidence
+cannot produce operational status, even when healthy is true.
+
+Upgrade this prober together with the Bridge complete-sweep producer. Legacy
+aggregate-only reports are degraded until the producer supplies the contract;
+no historical success is fabricated. These read-only HTTP observations do not
+prove independent chain authority, successful payouts or off-host notification
+delivery. External deployment and operator acceptance remain separate gates.
