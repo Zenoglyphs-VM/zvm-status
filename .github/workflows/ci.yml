@@ -11,6 +11,7 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,10 +23,14 @@ jobs:
 
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./...
+      - name: Run uncached component tests with named JSON results
+        run: go test -json -count=1 -timeout=3m ./...
+      - name: Run uncached race controls with named JSON results
+        run: go test -race -json -count=1 -timeout=5m ./...
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: web
@@ -43,5 +48,40 @@ jobs:
       - run: npm ci
       # The build refuses to run without its endpoints; the example has them.
       - run: cp ../.env.example ../.env
+      - run: npm test
       - run: npm run typecheck
       - run: npm run build
+
+
+  bridge-process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/checkout@v4
+        with:
+          repository: edgepillar/zvm-bridge
+          ref: 3734f2e967933952c8f513cfcac355e3e4b5f242
+          path: .ci/bridge
+          submodules: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Verify exact producer and Core sources
+        run: |
+          test "$(git -C .ci/bridge rev-parse HEAD)" = 3734f2e967933952c8f513cfcac355e3e4b5f242
+          test "$(git -C .ci/bridge/zvm-core rev-parse HEAD)" = 29e6d9b30be94de3772c850c7a1e9811585a8833
+      - name: Build both production commands with race instrumentation
+        run: |
+          mkdir -p "$RUNNER_TEMP/bridge-process"
+          go build -race -o "$RUNNER_TEMP/bridge-process/status" .
+          cd .ci/bridge
+          go build -race -o "$RUNNER_TEMP/bridge-process/bridge" ./cmd/zvm-bridge
+      - name: Run bounded loopback CLI-to-CLI health cases
+        env:
+          B02_PROCESS_STATUS: ${{ runner.temp }}/bridge-process/status
+          B02_PROCESS_BRIDGE: ${{ runner.temp }}/bridge-process/bridge
+          B02_PROCESS_ROLLUP: ${{ github.workspace }}/.ci/bridge/zvm-core/chains/l2/rollup.json
+        run: go test -race -json -count=1 -timeout=3m -tags=bridgeprocess -run '^TestBridgeStatusProcesses$' .

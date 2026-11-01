@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -62,6 +63,7 @@ type Summary struct {
 	Days       int             `json:"days"`
 	Overall    string          `json:"overall"`
 	Alerts     bool            `json:"alerts"`
+	Monitoring Monitoring      `json:"monitoring"`
 	Components []ComponentView `json:"components"`
 	Incidents  []IncidentView  `json:"incidents"`
 }
@@ -91,7 +93,9 @@ func (w *Watcher) etag(now time.Time) string {
 	if !at.IsZero() {
 		round = at.Unix()
 	}
-	return fmt.Sprintf(`"%d-%s"`, round, now.UTC().Format("20060102"))
+	monitor, _ := json.Marshal(w.monitoringAt(now))
+	digest := sha256.Sum256(monitor)
+	return fmt.Sprintf(`"%d-%s-%x"`, round, now.UTC().Format("20060102"), digest[:8])
 }
 
 // matches is If-None-Match's weak comparison. Cloudflare weakens an ETag
@@ -109,7 +113,7 @@ func matches(header, etag string) bool {
 }
 
 func (w *Watcher) serveCached(rw http.ResponseWriter, r *http.Request, name string, compute func(now time.Time) (any, error)) {
-	now := time.Now()
+	now := w.timeNow()
 	etag := w.etag(now)
 	h := rw.Header()
 	// no-cache, not no-store: the browser keeps the body and asks each time
@@ -165,7 +169,17 @@ func (w *Watcher) API() http.Handler {
 	})
 	mux.HandleFunc("GET /healthz", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		rw.Write([]byte(`{"ok":true}`))
+		rw.Header().Set("Cache-Control", "no-store")
+		monitor := w.monitoringAt(w.timeNow())
+		ok := monitor.State == "fresh"
+		if !ok {
+			rw.WriteHeader(http.StatusServiceUnavailable)
+		}
+		json.NewEncoder(rw).Encode(struct {
+			Schema     int        `json:"schema"`
+			OK         bool       `json:"ok"`
+			Monitoring Monitoring `json:"monitoring"`
+		}{1, ok, monitor})
 	})
 	return mux
 }
@@ -204,11 +218,12 @@ func (w *Watcher) summary(now time.Time) (*Summary, error) {
 	w.mu.RUnlock()
 
 	out := &Summary{
-		Generated: now.Unix(),
-		Interval:  int64(w.every / time.Second),
-		Days:      days,
-		Alerts:    w.mailer.Configured(),
-		Overall:   OK.String(),
+		Generated:  now.Unix(),
+		Interval:   int64(w.every / time.Second),
+		Days:       days,
+		Alerts:     w.mailer.Configured(),
+		Overall:    OK.String(),
+		Monitoring: w.monitoringAt(now),
 	}
 	names := map[string]string{}
 	worstNow := OK
@@ -278,6 +293,9 @@ func (w *Watcher) summary(now time.Time) (*Summary, error) {
 		out.Components = append(out.Components, v)
 	}
 	out.Overall = worstNow.String()
+	if out.Monitoring.State != "fresh" {
+		out.Overall = "unknown"
+	}
 
 	incs, err := w.store.Incidents(from)
 	if err != nil {

@@ -458,24 +458,48 @@ func (p *Prober) relayerCheck(c *Component) func(context.Context) (string, error
 	}
 }
 
-// The bridge's own verdict is the right one: `healthy` means its most recent
-// sweep of the vault worked. What it cannot say about itself is that the sweep
-// loop has stopped running, so a last success older than ten minutes is an
-// outage whatever the flag says.
+// Bridge health is a complete five-step report. The aggregate flag, success
+// time and every named step must agree; a fresh response alone is insufficient.
+var bridgeCriticalSteps = [...]string{
+	"receive_deposits", "scan_withdrawals", "pay_withdrawals", "confirm_payouts", "fund_plasma",
+}
+
+type bridgeHealthStep struct {
+	State      string `json:"state"`
+	StartedAt  string `json:"startedAt"`
+	FinishedAt string `json:"finishedAt"`
+	Error      string `json:"error"`
+}
+
+type bridgeHealthReport struct {
+	Healthy            bool                        `json:"healthy"`
+	LastOkAt           string                      `json:"lastOkAt"`
+	LastSweepAt        string                      `json:"lastSweepAt"`
+	Sweeping           *bool                       `json:"sweepInProgress"`
+	LastError          string                      `json:"lastError"`
+	UnreceivedDeposits int                         `json:"unreceivedDeposits"`
+	Payouts            map[string]int              `json:"payouts"`
+	Steps              map[string]bridgeHealthStep `json:"steps"`
+}
+
 func (p *Prober) bridgeCheck(ctx context.Context) (string, error) {
-	var st struct {
-		Healthy            bool           `json:"healthy"`
-		LastOkAt           string         `json:"lastOkAt"`
-		LastError          string         `json:"lastError"`
-		UnreceivedDeposits int            `json:"unreceivedDeposits"`
-		Payouts            map[string]int `json:"payouts"`
-	}
-	// It answers 502 itself when it cannot reach NoM or the ZVM.
+	var st bridgeHealthReport
 	if err := p.getJSON(ctx, p.bridge+"/status", &st); err != nil {
 		return "", err
 	}
-	if t, err := time.Parse(time.RFC3339, st.LastOkAt); err == nil {
-		if since := time.Since(t); since > 10*time.Minute {
+	now := time.Now()
+	var lastOK time.Time
+	if st.LastOkAt != "" {
+		var err error
+		lastOK, err = time.Parse(time.RFC3339Nano, st.LastOkAt)
+		if err != nil {
+			return "", errors.New("invalid last successful sweep time")
+		}
+		since := now.Sub(lastOK)
+		if since < -time.Minute {
+			return "", errors.New("last successful sweep time is in the future")
+		}
+		if since > 10*time.Minute {
 			msg := fmt.Sprintf("no successful sweep for %s", since.Round(time.Minute))
 			if st.LastError != "" {
 				msg += ": " + st.LastError
@@ -483,8 +507,46 @@ func (p *Prober) bridgeCheck(ctx context.Context) (string, error) {
 			return "", errors.New(msg)
 		}
 	}
+	if st.Sweeping != nil && *st.Sweeping {
+		return "", degraded("bridge sweep is in progress")
+	}
 	if !st.Healthy {
 		return "", degraded("last sweep failed: %s", st.LastError)
+	}
+	if st.Sweeping == nil {
+		return "", degraded("complete sweep activity report unavailable")
+	}
+	if lastOK.IsZero() {
+		return "", errors.New("no successful sweep time")
+	}
+	for _, name := range bridgeCriticalSteps {
+		step := st.Steps[name]
+		if step.State == "failed" || step.State == "canceled" {
+			return "", degraded("step %s %s: %s", name, step.State, step.Error)
+		}
+	}
+	if len(st.Steps) != len(bridgeCriticalSteps) {
+		return "", degraded("complete critical step report unavailable")
+	}
+	sweep, err := time.Parse(time.RFC3339Nano, st.LastSweepAt)
+	if err != nil || !sweep.Truncate(time.Second).Equal(lastOK.Truncate(time.Second)) {
+		return "", degraded("last success and completed sweep times disagree")
+	}
+	if sweep.After(now.Add(time.Minute)) {
+		return "", errors.New("last sweep time is in the future")
+	}
+	var priorFinish time.Time
+	for _, name := range bridgeCriticalSteps {
+		step, exists := st.Steps[name]
+		if !exists || step.State != "succeeded" || step.Error != "" {
+			return "", degraded("critical step %s is not a complete success", name)
+		}
+		start, startErr := time.Parse(time.RFC3339Nano, step.StartedAt)
+		finish, finishErr := time.Parse(time.RFC3339Nano, step.FinishedAt)
+		if startErr != nil || finishErr != nil || finish.Before(start) || finish.After(sweep) || (!priorFinish.IsZero() && start.Before(priorFinish)) {
+			return "", degraded("critical step %s has inconsistent timestamps", name)
+		}
+		priorFinish = finish
 	}
 	return fmt.Sprintf("%d paid · %d deposits waiting", st.Payouts["paid"], st.UnreceivedDeposits), nil
 }
